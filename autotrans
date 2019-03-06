@@ -1,19 +1,23 @@
 #!/bin/env python3
 
+import argparse
+parser = argparse.ArgumentParser( description = "Wrap gettext for html files." )
+parser.add_argument( "-s", "--strict", action = "store_const", const = True, help = "strict mode, wrap all texts including those has no display effect such as \"&nbsp;\"" )
+parser.add_argument( "TARGET_FILE", nargs = 1, type = str, help = "The target file" )
+
+args = parser.parse_args()
+
 import re, os, sys, html
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 
-try:
-	target_file = sys.argv[ 1 ]
-except IndexError:
-	print( "Please specify the file" )
-	sys.exit( 1 )
-
 infinTigger = 10
 reHtmlEntPat = "(?:&(?:[A-Za-z_:][\w:.-]*|\#(?:[0-9]+|x[0-9a-fA-F]+));)"
 
-def auto_trans( file_path ):
+noDispPats = [ "^(&nbsp;)+$" ]
+noDispPats = [ re.compile( x ) for x in noDispPats ]
+
+def auto_trans( file_path, strict_mode = False ):
 
 	otext = None
 	with open( file_path, 'r' ) as f:
@@ -24,14 +28,15 @@ def auto_trans( file_path ):
 
 	token_i = 0
 	tokenMap = {}
-	entMap = {}
+	# The map that keep original texts
+	koMap = {}
 
 	# Store all html entities
 	for ent in set( re.findall( reHtmlEntPat, otext ) ):
 		token = f"ENT_{token_i}_TNE"
 		otext = otext.replace( ent, token )
 
-		entMap[ token ] = ent
+		koMap[ token ] = ent
 		token_i = token_i + 1
 
 	while True:
@@ -49,6 +54,11 @@ def auto_trans( file_path ):
 			eType = type( element )
 			if eType is Comment:
 				continue
+
+			if not strict_mode and stext in koMap:
+				specialChar = koMap[ stext ]
+				if any( x.match( specialChar ) for x in noDispPats ):
+					continue
 
 			if "{%" in stext and "%}" in stext:
 				print( "WARINING: Partial trans[ " + stext + " ]")
@@ -91,12 +101,12 @@ def auto_trans( file_path ):
 		otext = pattern.sub( lambda x: tokenMap[ x.group() ], otext )
 
 		# Restore html entities
-		pattern = re.compile( "|".join( re.escape( x ) for x in entMap ) )
-		otext = pattern.sub( lambda x: entMap[ x.group() ], otext )
+		pattern = re.compile( "|".join( re.escape( x ) for x in koMap ) )
+		otext = pattern.sub( lambda x: koMap[ x.group() ], otext )
 
 		with open( file_path, 'w' ) as f:
 			f.write( otext )
 	else:
 		print( "All texts already gettext-ed" )
 
-auto_trans( target_file )
+auto_trans( args.TARGET_FILE[0], strict_mode = args.strict )
