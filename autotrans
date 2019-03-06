@@ -39,6 +39,8 @@ def auto_trans( file_path, strict_mode = False ):
 		koMap[ token ] = ent
 		token_i = token_i + 1
 
+	koPats = re.compile( "|".join( re.escape( x ) for x in koMap ) )
+
 	while True:
 		soup = BeautifulSoup( otext, "html.parser" )
 		texts = soup.findAll( text = True )
@@ -61,7 +63,8 @@ def auto_trans( file_path, strict_mode = False ):
 					continue
 
 			if "{%" in stext and "%}" in stext:
-				print( "WARINING: Partial trans[ " + stext + " ]")
+				stext = koPats.sub( lambda x: koMap[ x.group() ], stext )
+				print( f"WARNING: Partial trans[ {stext} ]")
 				continue
 
 			if len( stext ) < 3:
@@ -101,8 +104,7 @@ def auto_trans( file_path, strict_mode = False ):
 		otext = pattern.sub( lambda x: tokenMap[ x.group() ], otext )
 
 		# Restore html entities
-		pattern = re.compile( "|".join( re.escape( x ) for x in koMap ) )
-		otext = pattern.sub( lambda x: koMap[ x.group() ], otext )
+		otext = koPats.sub( lambda x: koMap[ x.group() ], otext )
 
 		with open( file_path, 'w' ) as f:
 			f.write( otext )
