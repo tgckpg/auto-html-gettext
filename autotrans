@@ -8,6 +8,7 @@ parser.add_argument( "TARGET_FILE", nargs = 1, type = str, help = "The target fi
 args = parser.parse_args()
 
 import re, os, sys, html
+from functools import lru_cache
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 
@@ -16,6 +17,16 @@ reHtmlEntPat = "(?:&(?:[A-Za-z_:][\w:.-]*|\#(?:[0-9]+|x[0-9a-fA-F]+));)"
 
 noDispPats = [ "^(&nbsp;)+$" ]
 noDispPats = [ re.compile( x ) for x in noDispPats ]
+
+@lru_cache( maxsize = 16 )
+def _mPats( patStr ):
+	return re.compile( patStr )
+
+def _mapApply( trMap, text ):
+	if not trMap:
+		return text
+	trPat = _mPats( "|".join( re.escape( x ) for x in trMap ) )
+	return trPat.sub( lambda x: trMap[ x.group() ], text )
 
 def auto_trans( file_path, strict_mode = False ):
 
@@ -39,8 +50,6 @@ def auto_trans( file_path, strict_mode = False ):
 		koMap[ token ] = ent
 		token_i = token_i + 1
 
-	koPats = re.compile( "|".join( re.escape( x ) for x in koMap ) )
-
 	while True:
 		soup = BeautifulSoup( otext, "html.parser" )
 		texts = soup.findAll( text = True )
@@ -63,7 +72,7 @@ def auto_trans( file_path, strict_mode = False ):
 					continue
 
 			if "{%" in stext and "%}" in stext:
-				stext = koPats.sub( lambda x: koMap[ x.group() ], stext )
+				stext = _mapApply( koMap, stext )
 				print( f"WARNING: Partial trans[ {stext} ]")
 				continue
 
@@ -100,11 +109,10 @@ def auto_trans( file_path, strict_mode = False ):
 			break
 
 	if tokenMap:
-		pattern = re.compile( "|".join( re.escape( x ) for x in tokenMap ) )
-		otext = pattern.sub( lambda x: tokenMap[ x.group() ], otext )
+		otext = _mapApply( tokenMap, otext )
 
 		# Restore html entities
-		otext = koPats.sub( lambda x: koMap[ x.group() ], otext )
+		otext = _mapApply( koMap, otext )
 
 		with open( file_path, 'w' ) as f:
 			f.write( otext )
