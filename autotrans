@@ -1,0 +1,102 @@
+#!/bin/env python3
+
+import re, os, sys, html
+from bs4 import BeautifulSoup
+from bs4.element import Comment
+
+try:
+	target_file = sys.argv[ 1 ]
+except IndexError:
+	print( "Please specify the file" )
+	sys.exit( 1 )
+
+infinTigger = 10
+reHtmlEntPat = "(?:&(?:[A-Za-z_:][\w:.-]*|\#(?:[0-9]+|x[0-9a-fA-F]+));)"
+
+def auto_trans( file_path ):
+
+	otext = None
+	with open( file_path, 'r' ) as f:
+		otext = f.read()
+
+	loopGuard = None
+	loopCount = 0
+
+	token_i = 0
+	tokenMap = {}
+	entMap = {}
+
+	# Store all html entities
+	for ent in set( re.findall( reHtmlEntPat, otext ) ):
+		token = f"ENT_{token_i}_TNE"
+		otext = otext.replace( ent, token )
+
+		entMap[ token ] = ent
+		token_i = token_i + 1
+
+	while True:
+		soup = BeautifulSoup( otext, "html.parser" )
+		texts = soup.findAll( text = True )
+		texts.sort( key = lambda x: len(x), reverse = True )
+
+		doBreak = True
+
+		for element in texts:
+			stext = element.strip()
+			if not stext or stext.startswith( "{" ):
+				continue
+
+			eType = type( element )
+			if eType is Comment:
+				continue
+
+			if "{%" in stext and "%}" in stext:
+				print( "WARINING: Partial trans[ " + stext + " ]")
+				continue
+
+			if len( stext ) < 3:
+				print( f"\"{stext}\" is too short to be translated" )
+				continue
+
+			text_cont = element.parent
+			oelement = str( element )
+
+			token = f"{{TOKEN_{token_i}}}"
+			otext = otext.replace( oelement, oelement.replace( stext, token ) )
+
+			tokenMap[ token ] = f"{{% trans '{stext}' %}}"
+			token_i = token_i + 1
+
+			if stext == loopGuard:
+				loopCount = loopCount + 1
+			else:
+				loopCount = 0
+
+			if infinTigger < loopCount:
+				print( f"Fatal Error, infinite loop occured on: {text_cont} -> {stext}" )
+				print( "Possibly caused by html-escaped texts or special characters" )
+				print( "Exiting." )
+				sys.exit( 1 )
+
+			loopGuard = stext
+
+			doBreak = False
+			break
+
+		if doBreak:
+			break
+
+	if tokenMap:
+		pattern = re.compile( "|".join( re.escape( x ) for x in tokenMap ) )
+		otext = pattern.sub( lambda x: tokenMap[ x.group() ], otext )
+
+		# Restore html entities
+		pattern = re.compile( "|".join( re.escape( x ) for x in entMap ) )
+		otext = pattern.sub( lambda x: entMap[ x.group() ], otext )
+
+		with open( file_path, 'w' ) as f:
+			f.write( otext )
+	else:
+		print( "All texts already gettext-ed" )
+
+auto_trans( target_file )
